@@ -9,7 +9,7 @@ import(
 	// "crypto/dsa"
 	// "net"
 	"github.com/mgutz/str"
-	"github.com/mediocregopher/radix.v2/redis" //redis
+	"github.com/mediocregopher/radix.v2/pool" //redis
 	"strconv"
 )
 // 1 消费日志 -> chan 
@@ -62,20 +62,12 @@ type storageBlock struct {
 }
 
 var log = logrus.New()
-var redisClient  redis.Client
 func init(){
 	log.Out = os.Stdout
 	log.SetLevel( logrus.DebugLevel)
-	redisClient, err := redis.Dial("tcp" , "localhost:6379")
-	if err != nil {
-		log.Fotalln("Redis connect failed")
-	}else {
-		defer redisClient.Close()
-	}
 }
 
 func main(){
-		
 	//获取参数
 	logFilePath := flag.String("logFilePath", "/usr/xx.log")
 	routineNum := flag.Int("routineNum" , 5 , "consumer number")
@@ -103,6 +95,22 @@ func main(){
 	var  uvChannel  = make(chan urlData,params.routineNum)
 	var  storageChannel  = make(chan storageBlock, params.routineNum)
 
+	//连接池 redis pool 
+	redisPool, err := pool.New("tcp", "localhost:6379",  2* params.routineNum)\
+	if err != nil {
+		log.Fotalln("redis pool created failed")
+		panic(err)
+	}else{
+		//odle 
+		go func() {
+			//起一个 goroutine 一直ping
+			for {
+				redisPool.Cmd("PING")
+				time.Sleep(3 * time.Second)
+			}
+		}()
+	}
+
 	//日志消费
 	go readFileByLine(params , logChannel)
 	//创建一组日志处理
@@ -111,10 +119,10 @@ func main(){
 	}
 	//创建pv uv 统计器
 	go pvCounter( pvChannel, storageChannel)
-	go uvCounter( uvChannel, storageChannel)
+	go uvCounter( uvChannel, storageChannel, redisPool)
 	//可扩展的xx Counter
 	// 创建存储器
-	go dataStorage( storageChannel)
+	go dataStorage( storageChannel, redisPool)
 
 	time.Sleep( 1000 * time.Second)
 }
@@ -253,14 +261,14 @@ func getTime (logTime , timeType string ) string{
 	 return strconv.FormatInt( t.Unix(), 10 )
 }
 
-func uvCounter ( uvChannel chan urlData , storageChannel chan storageBlock){
+func uvCounter ( uvChannel chan urlData , storageChannel chan storageBlock, redisPool *pool.Pool){
 		//uv 要去重
 		for data := range uvChannel {
 			//hyperLoglog  redis 
 			hyperLoglogKey := "uv_hpll" + getTime(data.data.time, "day")
 
 			// EX 设置过期时间
-			ret, err := redisClient.Cmd("PFADD", hyperLoglogKey, data.uid, "EX", 86400).Int()
+			ret, err := redisPool.Cmd("PFADD", hyperLoglogKey, data.uid, "EX", 86400).Int()
 			if err != nil{
 				log.Warningln("uvCounter : check redis hyperloglog failed")
 				//查失败 相当于没有 不return 
@@ -275,6 +283,6 @@ func uvCounter ( uvChannel chan urlData , storageChannel chan storageBlock){
 		}
 }
 
-func dataStorage (storageChannel chan storageBlock){
+func dataStorage (storageChannel chan storageBlock, redisPool *pool.Pool){
 
 }
