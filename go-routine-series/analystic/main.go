@@ -9,6 +9,8 @@ import(
 	// "crypto/dsa"
 	// "net"
 	"github.com/mgutz/str"
+	"github.com/mediocregopher/radix.v2/redis" //redis
+	"strconv"
 )
 // 1 消费日志 -> chan 
 // 2 解析日志  <- chan  可以定义参数
@@ -16,7 +18,13 @@ import(
 // 4 数据存储    chan
 
 
+//全局建立redis 链接
+
+
 const HANDLE_DIG = " /dig?"
+cosnt HANDLE_MOVIE = "/movie/"
+cosnt HANDLE_LIST = "/list/"
+cosnt HANDLE_HTML = ".html" //end
 
 type cmdParams struct {
 	logFilePath string 
@@ -33,10 +41,18 @@ type digData struct {
 type urlData struct {
 	data    digData
 	uid     string 
+	unode   urlNode
 }
 
-type urlNode struct {
 
+//存储方式对应不同的数据结构
+type urlNode struct {
+	//urlNodeType
+	unType  string  //main  list detail 
+	//urlNodeResourceId
+	unRid   int
+	unUrl   string  //page url 
+	unTime  string  // visit page time 
 }
 
 type storageBlock struct {
@@ -46,9 +62,16 @@ type storageBlock struct {
 }
 
 var log = logrus.New()
+var redisClient  redis.Client
 func init(){
 	log.Out = os.Stdout
 	log.SetLevel( logrus.DebugLevel)
+	redisClient, err := redis.Dial("tcp" , "localhost:6379")
+	if err != nil {
+		log.Fotalln("Redis connect failed")
+	}else {
+		defer redisClient.Close()
+	}
 }
 
 func main(){
@@ -143,11 +166,38 @@ func logConsumer( logChannel chan string , pvChannel, uvChannel chan urlData){
 			uid := hex.EncodeToString( hasher.Sum( nil))
 
 			//many parse job  can added here 
-			uData  :=  urlData{ data ,  uid }
+			uData  :=  urlData{ data ,  uid， formatUrl(data.url , data.time ) }
 
 			pvChannel <- uData
 			uvChannel <- uData
 		}
+}
+
+func formatUrl(url ,t string ) urlNode{
+	 //大量的页面入手 detail页面 >= home list page 
+	 pos1 := str.IndexOf(url , HANDLE_MOVIE , 0 )
+	 if pos1 != -1 { //detail  page 
+			pos1 += len(HANDLE_MOVIE)
+			pos2 := str.IndexOf(url, HANDLE_HTML, 0)
+
+			idStr := str.Substr(url, po1, pos2 -pos1 )
+			id := strconv.Atoi(idStr) //str => number
+			return urlNode{"movie", id, url ,t}
+	 }else{ //list page 
+		 pos1 =  str.IndexOf(url , HANDLE_LIST , 0 )
+		 if pos1 != -1 {
+			 pos1 += len( HANDLE_LIST)
+			 pos2 := str.IndexOf(url, HANDLE_HTML, 0)
+
+			 idStr := str.Substr(url, po1, pos2 -pos1 )
+			 id := strconv.Atoi(idStr) //str => number
+			 return urlNode{"list", id, url ,t}
+		 }else{
+			 //home page 
+			 return urlNode("home", 0 , url , t )
+		 }
+	 }
+
 }
 
 func cutLogUploadData ( logStr string ) digData {
@@ -172,18 +222,57 @@ func cutLogUploadData ( logStr string ) digData {
 
 		return digData{
 			time : data.Get("time"),
-			url : data.Get("url"),
+			url :  data.Get("url"),
 			refer : data.Get("refer"),
 			ua : data.Get("ua"),
 		}
 }
 
 func pvCounter ( pvChannel chan urlData, storageChannel chan storageBlock	){
+	 for data := range pvChannel {
+		 sItem := storageBlock{ "pv" , "ZINCREBY" , data.unode}
 
+		 storageChannel <- sItem
+	 }
+}
+
+func getTime (logTime , timeType string ) string{
+	 var item string 
+	 switch timeType {
+	 	case "day" : 
+			item ="2006-01-02"
+			break
+	 	case "hour" :
+			item ="2006-01-02 15"
+			break 
+		case "min" :
+			item ="2006-01-02 15:04"
+			break 
+	 }
+	 t , _ := time.Parse(item , time.Now().Format(item))
+	 return strconv.FormatInt( t.Unix(), 10 )
 }
 
 func uvCounter ( uvChannel chan urlData , storageChannel chan storageBlock){
+		//uv 要去重
+		for data := range uvChannel {
+			//hyperLoglog  redis 
+			hyperLoglogKey := "uv_hpll" + getTime(data.data.time, "day")
 
+			// EX 设置过期时间
+			ret, err := redisClient.Cmd("PFADD", hyperLoglogKey, data.uid, "EX", 86400).Int()
+			if err != nil{
+				log.Warningln("uvCounter : check redis hyperloglog failed")
+				//查失败 相当于没有 不return 
+			}
+			if ret != 1 {
+				continue
+			}
+
+			sItem := storageBlock{ "uv" , "ZINCREBY" , data.unode}
+
+			storageChannel <- sItem
+		}
 }
 
 func dataStorage (storageChannel chan storageBlock){
