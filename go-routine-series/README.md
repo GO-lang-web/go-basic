@@ -126,3 +126,67 @@ rm -v $logdir"/error.log."$DATE_OLD*
 
 - 清空 log echo '' > /tmp/log
 - 查看 tail -f /tmp/log
+
+## pv uv vv
+
+- UV unique visitor : 访问您电脑的一台客户端为一个访客，00:00 - 24:00 相同的客户端只被计算一次
+- IP Internet Protocol 访问过某站点的 IP 总数， 以用户的 IP 地址作为统计依据 00:00 - 24:00 相同的客户端只被计算一次
+  > UV 和 IP 的区别
+- a b 各自账号在同一台电脑上登录 weibo, IP 数 +1 ， UV +2 ,因为使用的是一台电脑
+
+- PV page view 页面浏览量或者用户点击量 用户每一次对网站中的每个网页访问均被记录为一个 PV,用户对同一个网页多次访问，PV 累计增加
+
+- VV visit view 统计访客 一天内访问网站的次数 完成浏览并且关闭网页就完成一次 一天内可能有多次访问行为
+
+> 你今天 10 点钟打开 google.com 访问三个页面， 12 点又打开 google.com 访问两个页面
+> PV +5 VV+2 pv 指的是页面的浏览次数 vv 指的是你访问网站的次数
+
+## 并发模型里面 routine 里面使用外部的变量 比如 redis 应该是连接池
+
+## go
+
+- 完整项目 不到 300 行代码
+- 适合做流水线，扛住压力的情况
+
+## 可视化 TODO
+
+- `yarn create umi showData`
+- cd `showData`
+- `npm i`
+- `npm start`
+
+## 提供两个接口 TODO
+
+- 1. getPvUv
+- 2. getRank top=200
+
+## 回顾
+
+- mamp 搭建网站 -（js 上报数据）-> nginx(access_log 收集并且存储 log) -> go 处理监听新增数据 协程处理 -(存到 redis) -> (api 从 redis 取数据提供接口) -> (ant design pro 脚手架搭建项目， 前端 ajax 请求 pv uv top200 show in frontend)
+
+## 企业级收集看重：
+
+> 数据收集侧
+
+- 1. user information can be as detail as possible
+- 2. app 的数据收集
+- 3. 尽可能避免丢失 数据上报失败或者关键环节忘记加上
+     > 数据处理侧
+- 1. 准确性
+- 2. 稳定性加强 多维度 不仅仅依赖程序自动启动
+- 3. 存储方案的迭代 不同发展阶段对应数据存储压力不同，提前做好储备
+
+## final
+
+> go
+
+- 1. go routine 以及控制
+- 2. go routine 之间的通信 channel
+- 3. go rountne 组成的流水线
+
+> project
+
+- 1. nginx 打点方案
+- 2. 流量统计服务
+- 3. 数据统计服务
+- 4. ant Desgin Pro
