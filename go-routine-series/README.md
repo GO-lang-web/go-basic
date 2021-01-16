@@ -123,3 +123,6 @@ rm -v $logdir"/error.log."$DATE_OLD*
 
 - ls -a 显示.文件
 - .htaccess 是 rewrite 的规则
+
+- 清空 log echo '' > /tmp/log
+- 查看 tail -f /tmp/log
