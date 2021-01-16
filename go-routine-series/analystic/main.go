@@ -94,7 +94,38 @@ func main(){
 }
 
 func readFileByLine (params cmdParams , logChannel chan string ){
+		fd , err = os.Open(params.logFilePath)
+		if err != nil {
+			log.Warningf("readFileByLine : can't open file %s", params.logFilePath)
+			return err
+		}
 
+		defer fd.Close()
+
+		bufferRead := buffer.NewReader( fd)
+		
+		count := 0 
+		for {
+			line, err := bufferRead.ReadString('\n') //'' 
+
+			logChannel <- line
+			count++
+
+			if count %( 1000 * params.routineNum)  == 0 {
+				log.Infof( "readFileByLine: line %d", count)
+			}
+
+			if err != nil {
+				if err == io.EOF {
+					time.Sleep( 3 * time.Second)
+					log.Infof("readFileByLine: wait readline %d", count)
+				}else{
+					log.Warningf("readFileByLine read log error " )
+				}
+			}
+		}
+
+		return nil
 }
 
 func logConsumer( logChannel chan string , pvChannel, uvChannel chan urlData){
