@@ -201,8 +201,8 @@ func formatUrl(url ,t string ) urlNode{
 			 id := strconv.Atoi(idStr) //str => number
 			 return urlNode{"list", id, url ,t}
 		 }else{
-			 //home page 
-			 return urlNode("home", 0 , url , t )
+			 //home page    redis 0 invalid so change to 1 
+			 return urlNode("home", 1 , url , t )
 		 }
 	 }
 
@@ -238,7 +238,7 @@ func cutLogUploadData ( logStr string ) digData {
 
 func pvCounter ( pvChannel chan urlData, storageChannel chan storageBlock	){
 	 for data := range pvChannel {
-		 sItem := storageBlock{ "pv" , "ZINCREBY" , data.unode}
+		 sItem := storageBlock{ "pv" , "ZINCRBY" , data.unode}
 
 		 storageChannel <- sItem
 	 }
@@ -277,12 +277,51 @@ func uvCounter ( uvChannel chan urlData , storageChannel chan storageBlock, redi
 				continue
 			}
 
-			sItem := storageBlock{ "uv" , "ZINCREBY" , data.unode}
+			sItem := storageBlock{ "uv" , "ZINCRBY" , data.unode}
 
 			storageChannel <- sItem
 		}
 }
 
-func dataStorage (storageChannel chan storageBlock, redisPool *pool.Pool){
 
+//企业级 使用HBase 劣势： 列簇需要声明清楚
+func dataStorage (storageChannel chan storageBlock, redisPool *pool.Pool){
+		for  block := range  storageChannel {
+			redis_prefix := block.counterType + '_'
+
+			//逐层增加， 
+			//movie/1.html  
+			//detail + pv1 
+			//cate +  pv1
+			//home + pv1 
+			//网页- 大分类- 小分类- 详情页面
+			//维度 天-小时-分钟
+			//存储模型 redis SortedSet
+			setKeys := [] string {
+				//天-小时-分钟
+				redis_prefix + "day_" + getTime(block.unode.unTime, "day")
+				redis_prefix + "hour_" + getTime(block.unode.unTime, "hour")
+				redis_prefix + "min_" + getTime(block.unode.unTime, "min")
+				//网页- 大分类- 小分类- 详情页面
+				redis_prefix + block.unode.unType + "_day_" + getTime(block.unode.unTime, "day")
+				redis_prefix + block.unode.unType + "_hour_" + getTime(block.unode.unTime, "hour")
+				redis_prefix + block.unode.unType + "_min_" + getTime(block.unode.unTime, "min")
+
+			}
+
+			rowId := block.unode.uid
+
+			for _,key := range setKeys {
+				//set to redis 
+				ret, err := redisPool.Cmd(block.storageModel, key, 1, rowId)
+				if err != nil{
+					//提供报错信息尽可能完整 统计学里面少数错误可以忽略
+					log.Errorln("dataStorage: resis storage error",block.storageModel, key, rowId)
+				}else{
+					//success 为什么不打日志 数量很大
+					// 10000 * N* M uv /pv 后面还可能加别的
+
+				}
+			}
+		}
 }
